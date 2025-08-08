@@ -1,8 +1,10 @@
 package com.hmdp.controller;
 
 
+import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.RandomUtil;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.toolkit.BeanUtils;
 import com.hmdp.dto.LoginFormDTO;
 import com.hmdp.dto.Result;
 import com.hmdp.dto.UserDTO;
@@ -13,12 +15,23 @@ import com.hmdp.service.IUserService;
 import com.hmdp.utils.RegexUtils;
 import com.hmdp.utils.UserHolder;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpSession;
 
+import java.time.Duration;
+import java.time.temporal.ChronoUnit;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Objects;
+import java.util.UUID;
+import java.util.concurrent.TimeUnit;
+
 import static com.baomidou.mybatisplus.core.toolkit.Wrappers.query;
+import static com.hmdp.utils.RedisConstants.*;
 
 /**
  * <p>
@@ -39,21 +52,33 @@ public class UserController {
     @Resource
     private IUserInfoService userInfoService;
 
+    @Resource
+    private RedisTemplate<String, String> redisTemplate;
+    @Resource
+    private StringRedisTemplate stringRedisTemplate;
+
     /**
      * 发送手机验证码
      */
-    @PostMapping("code")
+    @PostMapping("/code")
     public Result sendCode(@RequestParam("phone") String phone, HttpSession session) {
         // 1.检验手机号是否符合格式,如果手机号不符合格式，返回错误信息
         if (RegexUtils.isPhoneInvalid(phone)) {
             return Result.fail("手机号格式错误");
         }
         // 2.如果手机号符合格式,生成短信验证码,并将验证码保存到session
-        String code = RandomUtil.randomNumbers(6);
-        session.setAttribute(phone,code);
+        // 2.1 判断redis中是否已经存在该手机号的验证码，若存在则直接返回
+        String code = redisTemplate.opsForValue().get(LOGIN_CODE_KEY+phone);
+        if(code == null){
+            // 2.2 若不存在则创建新的验证码并返回
+            String new_code = RandomUtil.randomNumbers(6);
+            redisTemplate.opsForValue().set(LOGIN_CODE_KEY+phone,new_code,5, TimeUnit.MINUTES);
+            log.info("成功发送短信验证码：{}",new_code);
+            return Result.ok(new_code);
+        }
         // 3.发送短信验证码
         log.info("成功发送短信验证码：{}",code);
-        return Result.ok();
+        return Result.ok(code);
     }
 
     /**
@@ -75,23 +100,35 @@ public class UserController {
             return Result.fail("验证码不存在");
         }
         //4.校验验证码是否正确
-        if(!session.getAttribute(loginForm.getPhone()).toString().equals(loginForm.getCode())){
+        //4.1获取redis中的code
+        String redis_code = redisTemplate.opsForValue().get(LOGIN_CODE_KEY+loginForm.getPhone());
+        System.out.println(redis_code);
+        System.out.println(loginForm.getCode());
+        if(!Objects.equals(redis_code, loginForm.getCode())){
             return Result.fail("验证码错误");
         }
         //5.校验用户是否存在
         QueryWrapper<User> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("phone", loginForm.getPhone());
         User user = userService.getOne(queryWrapper); // 调用 getOne 方法
-        UserDTO userDTO = new UserDTO();
-        userDTO.setIcon(user.getIcon());
-        userDTO.setNickName(user.getNickName());
-        userDTO.setId(user.getId());
+
+        String token = UUID.randomUUID().toString();
+
         if(user == null){
-            //6.如果不存在则创建新的用户
-            userService.creatUserWithPhone(loginForm.getPhone());
+            log.info("创建新的user++++++++++++++++++++++++++++++++++");
+            user = userService.creatUserWithPhone(loginForm.getPhone());
         }
-        //7.将用户信息保存在session中
-        session.setAttribute("user",userDTO);
+        log.info("userPhone:"+user.getPhone());
+        //7.将用户信息保存在redis中
+        //todo 会重复在redis中创建user，待优化！！！！！！！！！也不对，下线之后应该要清除掉缓存中的user……
+        Map<String,Object> userMap = new HashMap<>();
+        userMap.put("phone",loginForm.getPhone());
+        userMap.put("nickName",user.getNickName());
+        userMap.put("icon",user.getIcon());
+        String tokenKey = LOGIN_USER_KEY+token;
+        redisTemplate.opsForHash().putAll(tokenKey, userMap);
+        // 给个过期时间，防止一直占内存
+        redisTemplate.expire(tokenKey, Duration.ofHours(24));
         return Result.ok();
     }
 
