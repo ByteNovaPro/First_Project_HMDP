@@ -5,11 +5,13 @@ import cn.hutool.core.util.RandomUtil;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.hmdp.dto.LoginFormDTO;
 import com.hmdp.dto.Result;
+import com.hmdp.dto.UserDTO;
 import com.hmdp.entity.User;
 import com.hmdp.entity.UserInfo;
 import com.hmdp.service.IUserInfoService;
 import com.hmdp.service.IUserService;
 import com.hmdp.utils.RegexUtils;
+import com.hmdp.utils.UserHolder;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
@@ -80,12 +82,16 @@ public class UserController {
         QueryWrapper<User> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("phone", loginForm.getPhone());
         User user = userService.getOne(queryWrapper); // 调用 getOne 方法
+        UserDTO userDTO = new UserDTO();
+        userDTO.setIcon(user.getIcon());
+        userDTO.setNickName(user.getNickName());
+        userDTO.setId(user.getId());
         if(user == null){
             //6.如果不存在则创建新的用户
             userService.creatUserWithPhone(loginForm.getPhone());
         }
         //7.将用户信息保存在session中
-        session.setAttribute("user",user);
+        session.setAttribute("user",userDTO);
         return Result.ok();
     }
 
@@ -101,9 +107,8 @@ public class UserController {
 
     @GetMapping("/me")
     public Result me(){
-
-        // TODO 获取当前登录的用户并返回
-        return Result.fail("功能未完成");
+        UserDTO user = UserHolder.getUser();
+        return Result.ok(user);
     }
 
     @GetMapping("/info/{id}")
