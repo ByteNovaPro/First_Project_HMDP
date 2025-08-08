@@ -17,7 +17,7 @@ public class LoginInterceptor implements HandlerInterceptor {
         //2.获取session中的用户
         Object user = session.getAttribute("user");
         //3.判断session中是否存在用户
-        if(user == null){
+        if(user == null){ 
             //4.如果不存在就报错
             response.setStatus(401);
             return false;
