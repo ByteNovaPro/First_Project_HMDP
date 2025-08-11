@@ -1,18 +1,16 @@
-package com.hmdp.utils;
+package com.hmdp.Interceptor;
 
 import cn.hutool.core.util.StrUtil;
 import com.hmdp.dto.UserDTO;
-import com.hmdp.entity.User;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.hmdp.utils.UserHolder;
 import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.http.server.reactive.HttpHandler;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-import javax.servlet.http.HttpSession;
+import java.util.Map;
 
 import static com.hmdp.utils.RedisConstants.LOGIN_USER_KEY;
 
@@ -24,20 +22,13 @@ public class LoginInterceptor implements HandlerInterceptor {
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
 
-        //1.拿出token
-        String token = request.getHeader("authorization");
-        if(StrUtil.isBlank(token)){
+        //1.判断是否需要拦截（ThreadLocal中是否有用户）
+        UserDTO user = UserHolder.getUser();
+        if (user == null){
             response.setStatus(401);
             return false;
         }
-        //1.判断redis中是否存在用户
-        if((redisTemplate.opsForHash().entries(LOGIN_USER_KEY+token)).isEmpty()){
-            response.setStatus(401);
-            return false;
-        }
-        //2.存在就保存在threaLocal中
-        UserHolder.saveUser((UserDTO) redisTemplate.opsForValue().get(token));
-        //3.放行
+
         return true;
     }
 }

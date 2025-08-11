@@ -9,4 +9,6 @@ public class UserDTO implements Serializable {
     private Long id;
     private String nickName;
     private String icon;
+    private String token;
+    private String phone;
 }

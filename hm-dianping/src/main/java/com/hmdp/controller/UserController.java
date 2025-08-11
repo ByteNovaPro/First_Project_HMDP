@@ -15,6 +15,7 @@ import com.hmdp.service.IUserService;
 import com.hmdp.utils.RegexUtils;
 import com.hmdp.utils.UserHolder;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.web.bind.annotation.*;
@@ -54,8 +55,9 @@ public class UserController {
 
     @Resource
     private RedisTemplate<String, String> redisTemplate;
-    @Resource
-    private StringRedisTemplate stringRedisTemplate;
+
+
+
 
     /**
      * 发送手机验证码
@@ -73,11 +75,9 @@ public class UserController {
             // 2.2 若不存在则创建新的验证码并返回
             String new_code = RandomUtil.randomNumbers(6);
             redisTemplate.opsForValue().set(LOGIN_CODE_KEY+phone,new_code,5, TimeUnit.MINUTES);
-            log.info("成功发送短信验证码：{}",new_code);
             return Result.ok(new_code);
         }
         // 3.发送短信验证码
-        log.info("成功发送短信验证码：{}",code);
         return Result.ok(code);
     }
 
@@ -102,8 +102,8 @@ public class UserController {
         //4.校验验证码是否正确
         //4.1获取redis中的code
         String redis_code = redisTemplate.opsForValue().get(LOGIN_CODE_KEY+loginForm.getPhone());
-        System.out.println(redis_code);
-        System.out.println(loginForm.getCode());
+        System.out.println("redis_code::::::::::::::::::"+redis_code);
+        System.out.println("loginForm.getCode()"+loginForm.getCode());
         if(!Objects.equals(redis_code, loginForm.getCode())){
             return Result.fail("验证码错误");
         }
@@ -115,21 +115,21 @@ public class UserController {
         String token = UUID.randomUUID().toString();
 
         if(user == null){
-            log.info("创建新的user++++++++++++++++++++++++++++++++++");
             user = userService.creatUserWithPhone(loginForm.getPhone());
         }
-        log.info("userPhone:"+user.getPhone());
         //7.将用户信息保存在redis中
-        //todo 会重复在redis中创建user，待优化！！！！！！！！！也不对，下线之后应该要清除掉缓存中的user……
+        //todo 会重复在redis中创建user，待优化！！！！！！！！！也不对，下线之后应该要清除掉缓存中的user…… 可以往下继续开发了……嘿嘿……
+
         Map<String,Object> userMap = new HashMap<>();
         userMap.put("phone",loginForm.getPhone());
         userMap.put("nickName",user.getNickName());
         userMap.put("icon",user.getIcon());
+        userMap.put("id",user.getId());
         String tokenKey = LOGIN_USER_KEY+token;
         redisTemplate.opsForHash().putAll(tokenKey, userMap);
         // 给个过期时间，防止一直占内存
         redisTemplate.expire(tokenKey, Duration.ofHours(24));
-        return Result.ok();
+        return Result.ok(token);
     }
 
     /**
@@ -138,13 +138,20 @@ public class UserController {
      */
     @PostMapping("/logout")
     public Result logout(){
-        // TODO 实现登出功能
-        return Result.fail("功能未完成");
+        String token = UserHolder.getUser().getToken();
+        System.out.println("removeUser之前::::::::::"+UserHolder.getUser());
+        UserHolder.removeUser();
+        System.out.println("removeUser之后::::::::::"+UserHolder.getUser());
+        redisTemplate.delete(token);
+        System.out.println("成功退出成功退出成功退出成功退出成功退出成功退出成功退出成功退出");
+
+        return Result.ok("成功退出");
     }
 
     @GetMapping("/me")
     public Result me(){
         UserDTO user = UserHolder.getUser();
+
         return Result.ok(user);
     }
 
